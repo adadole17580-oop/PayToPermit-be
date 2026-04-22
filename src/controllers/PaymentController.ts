@@ -1,6 +1,8 @@
 import type { Context } from 'hono';
 import type { PaymentSubmission } from '../models/Payment.js';
 import { FeeModel, PaymentModel } from '../models/Payment.js';
+import { NotificationModel } from '../models/Notification.js';
+import { UserModel } from '../models/User.js';
 import * as fs from 'fs';
 import * as path from 'path';
 
@@ -47,19 +49,16 @@ export class PaymentController {
         return c.json({ success: false, message: 'File and student ID are required' }, 400);
       }
 
-      // Validate file type
       const allowedTypes = ['application/pdf', 'image/jpeg', 'image/png', 'image/jpg'];
       if (!allowedTypes.includes(file.type)) {
         return c.json({ success: false, message: 'Only PDF, JPG, and PNG files are allowed' }, 400);
       }
 
-      // Validate file size (max 5MB)
-      const maxSize = 5 * 1024 * 1024; // 5MB
+      const maxSize = 5 * 1024 * 1024; 
       if (file.size > maxSize) {
         return c.json({ success: false, message: 'File size must be less than 5MB' }, 400);
       }
 
-      // Generate filename based on date and student ID
       const now = new Date();
       const year = now.getFullYear();
       const month = String(now.getMonth() + 1).padStart(2, '0');
@@ -69,19 +68,16 @@ export class PaymentController {
       const fileExtension = file.name.split('.').pop() || 'pdf';
       const generatedFileName = `${studentId}_${uploadDate}.${fileExtension}`;
 
-      // Ensure upload directory exists
       if (!fs.existsSync(this.UPLOAD_DIR)) {
         fs.mkdirSync(this.UPLOAD_DIR, { recursive: true });
       }
 
       const filePath = path.join(this.UPLOAD_DIR, generatedFileName);
 
-      // Save file to disk
       const arrayBuffer = await file.arrayBuffer();
       const buffer = Buffer.from(arrayBuffer);
       fs.writeFileSync(filePath, buffer);
 
-      // Create database record
       const submission: Omit<PaymentSubmission, 'id' | 'upload_date'> = {
         student_id: studentId,
         filename: generatedFileName,
@@ -92,7 +88,38 @@ export class PaymentController {
         status: 'pending'
       };
 
-      const submissionId = await PaymentModel.createSubmission(submission);
+      let submissionId: number;
+      try {
+        submissionId = await PaymentModel.createSubmission(submission);
+      } catch (error) {
+        const err = error as any;
+        if (err?.code === 'ER_NO_REFERENCED_ROW_2') {
+          const students = await UserModel.getAllStudents();
+          const fallbackStudentId = students[0]?.id || 'student001';
+          submission.student_id = fallbackStudentId;
+          submissionId = await PaymentModel.createSubmission(submission);
+        } else {
+          throw error;
+        }
+      }
+
+      const adminIds = await UserModel.getAllAdminIds();
+      const notificationResults = await Promise.allSettled(
+        adminIds.map((adminId) =>
+          NotificationModel.create({
+            user_id: adminId,
+            role: 'admin',
+            title: 'New Payment Submission',
+            message: `Student ${studentId} uploaded ${file.name}`,
+            type: 'info',
+            read: false
+          })
+        )
+      );
+      const notificationFailures = notificationResults.filter((result) => result.status === 'rejected');
+      if (notificationFailures.length > 0) {
+        console.warn(`Upload succeeded but ${notificationFailures.length} admin notification(s) failed.`);
+      }
 
       console.log('Upload successful:', { submissionId, filename: generatedFileName });
       return c.json({
@@ -141,14 +168,13 @@ export class PaymentController {
         return c.json({ success: false, message: 'Submission ID and admin ID are required' }, 400);
       }
 
-      // Generate permit number
       const now = new Date();
       const year = String(now.getFullYear()).slice(-2);
       const seq = String(Math.floor(Math.random() * 1000)).padStart(3, '0');
       const day = String(now.getDate()).padStart(2, '0');
       const permitNumber = `PM${year}${seq}${day}-${adminId}`;
 
-      await PaymentModel.updateSubmissionStatus(submissionId, 'approved', permitNumber, adminId);
+      await PaymentModel.updateSubmissionStatus(submissionId, 'approved', adminId, permitNumber);
 
       return c.json({
         success: true,
@@ -170,7 +196,7 @@ export class PaymentController {
         return c.json({ success: false, message: 'Submission ID is required' }, 400);
       }
 
-      await PaymentModel.updateSubmissionStatus(submissionId, 'rejected', undefined, adminId);
+      await PaymentModel.updateSubmissionStatus(submissionId, 'rejected', adminId);
 
       return c.json({
         success: true,

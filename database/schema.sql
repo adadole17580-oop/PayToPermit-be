@@ -71,7 +71,6 @@ CREATE TABLE IF NOT EXISTS Notifications (
     is_read BOOLEAN DEFAULT FALSE,
     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
     updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
-    FOREIGN KEY (user_id) REFERENCES Students(student_id) ON DELETE CASCADE,
     INDEX idx_user_role (user_id, user_role),
     INDEX idx_is_read (is_read)
 );

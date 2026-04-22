@@ -1,13 +1,16 @@
 import type { Context } from 'hono';
 import { UserModel } from '../models/User.js';
 
-export class AuthController {
-  static async login(c: Context) {
+const payments: any[] = [];
+
+export const AuthController = {
+
+  async login(c: Context) {
     try {
       const { email, password, role } = await c.req.json();
 
-      if (!email || !password || !role) {
-        return c.json({ success: false, message: 'Email, password, and role are required' }, 400);
+      if (!email || !password) {
+        return c.json({ success: false, message: 'Email and password are required' }, 400);
       }
 
       const user = await UserModel.findByEmailAndPassword(email, password, role);
@@ -25,37 +28,20 @@ export class AuthController {
           role: user.role
         }
       });
-    } catch (error) {
-      console.error('Login error:', error);
+
+    } catch (err) {
+      console.error(err);
       return c.json({ success: false, message: 'Login failed' }, 500);
     }
-  }
+  },
 
-  static async register(c: Context) {
+  async register(c: Context) {
     try {
-      const { fullname, email, address, phone, department, password, role, id } = await c.req.json();
-
-      console.log('Registration request data:', { fullname, email, address, phone, department, role, id });
+      const { fullname, email, address, phone, department, password, role, id } =
+        await c.req.json();
 
       if (!fullname || !email || !address || !phone || !password || !role || !id) {
-        console.log('Missing fields:', { fullname: !!fullname, email: !!email, address: !!address, phone: !!phone, password: !!password, role: !!role, id: !!id });
         return c.json({ success: false, message: 'All fields are required' }, 400);
-      }
-
-      if (role === 'student' && !department) {
-        return c.json({ success: false, message: 'Department is required for students' }, 400);
-      }
-
-      // Validate email format
-      const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
-      if (!emailRegex.test(email)) {
-        return c.json({ success: false, message: 'Invalid email format' }, 400);
-      }
-
-      // Validate phone format
-      const phoneRegex = /^[\d\s\-\(\)]+$/;
-      if (!phoneRegex.test(phone)) {
-        return c.json({ success: false, message: 'Invalid phone format' }, 400);
       }
 
       await UserModel.create({
@@ -69,25 +55,15 @@ export class AuthController {
         role
       });
 
-      console.log('Registration successful for:', email);
       return c.json({ success: true, message: 'Registration successful' });
-    } catch (error) {
-      console.error('Registration error:', error);
-      const err = error as any;
-      if (err.code === 'ER_DUP_ENTRY') {
-        return c.json({ success: false, message: 'User already exists' }, 409);
-      }
-      if (err.code === 'ER_NO_SUCH_TABLE') {
-        return c.json({ success: false, message: 'Database not initialized. Please run database setup first.' }, 500);
-      }
-      if (err.code === 'ER_BAD_FIELD_ERROR') {
-        return c.json({ success: false, message: 'Database schema error. Please run database setup first.' }, 500);
-      }
-      return c.json({ success: false, message: 'Registration failed: ' + err.message }, 500);
-    }
-  }
 
-  static async resetPassword(c: Context) {
+    } catch (err) {
+      console.error(err);
+      return c.json({ success: false, message: 'Registration failed' }, 500);
+    }
+  },
+
+  async resetPassword(c: Context) {
     try {
       const { email } = await c.req.json();
 
@@ -101,12 +77,61 @@ export class AuthController {
         return c.json({ success: false, message: 'Email not found' }, 404);
       }
 
-      // In a real application, you would send a password reset email here
-      // For now, we'll just return success
-      return c.json({ success: true, message: 'Password reset link sent to email' });
-    } catch (error) {
-      console.error('Reset password error:', error);
-      return c.json({ success: false, message: 'Reset password failed' }, 500);
+      return c.json({
+        success: true,
+        message: 'Password reset link sent'
+      });
+
+    } catch (err) {
+      console.error(err);
+      return c.json({ success: false, message: 'Reset failed' }, 500);
     }
+  },
+
+  async upload(c: Context) {
+    const { student_id, file } = await c.req.json();
+
+    if (!student_id || !file) {
+      return c.json({ success: false, message: 'Missing data' }, 400);
+    }
+
+    const payment = {
+      id: `pay_${Date.now()}`,
+      student_id,
+      file,
+      status: 'pending',
+      created_at: new Date()
+    };
+
+    payments.push(payment);
+
+    return c.json({ success: true, payment });
+  },
+
+  async getPayments(c: Context) {
+    return c.json({ success: true, payments });
+  },
+
+  async updatePayment(c: Context) {
+    const id = c.req.param('id');
+    const { status } = await c.req.json();
+
+    const payment = payments.find(p => p.id === id);
+
+    if (!payment) {
+      return c.json({ success: false, message: 'Not found' }, 404);
+    }
+
+    payment.status = status;
+
+    return c.json({ success: true, payment });
+  },
+
+  async getStudentPayments(c: Context) {
+    const id = c.req.param('id');
+
+    const result = payments.filter(p => p.student_id === id);
+
+    return c.json({ success: true, payments: result });
   }
-}
+};

@@ -15,7 +15,7 @@ export class NotificationModel {
   static async create(notification: Omit<NotificationData, 'id' | 'created_at'>): Promise<number> {
     try {
       const [result] = await db.query(
-        'INSERT INTO Notifications (user_id, role, title, message, type, read) VALUES (?, ?, ?, ?, ?, ?)',
+        'INSERT INTO Notifications (user_id, user_role, title, message, type, is_read) VALUES (?, ?, ?, ?, ?, ?)',
         [
           notification.user_id,
           notification.role,
@@ -36,7 +36,7 @@ export class NotificationModel {
   static async getByUserId(userId: string, role: 'student' | 'admin'): Promise<NotificationData[]> {
     try {
       const [rows] = await db.query(
-        'SELECT * FROM Notifications WHERE user_id = ? AND role = ? ORDER BY created_at DESC',
+        'SELECT * FROM Notifications WHERE user_id = ? AND user_role = ? ORDER BY created_at DESC',
         [userId, role]
       ) as any;
       const notifications = Array.isArray(rows) ? rows : [];
@@ -44,11 +44,11 @@ export class NotificationModel {
       return notifications.map((notif: any) => ({
         id: notif.notification_id || notif.id,
         user_id: notif.user_id,
-        role: notif.role,
+        role: notif.user_role,
         title: notif.title,
         message: notif.message,
         type: notif.type,
-        read: notif.read === 1,
+        read: notif.is_read === 1 || notif.is_read === true,
         created_at: notif.created_at
       }));
     } catch (error) {
@@ -60,7 +60,7 @@ export class NotificationModel {
   static async markAsRead(notificationId: number): Promise<void> {
     try {
       await db.query(
-        'UPDATE Notifications SET read = 1 WHERE notification_id = ?',
+        'UPDATE Notifications SET is_read = 1 WHERE notification_id = ?',
         [notificationId]
       );
     } catch (error) {
@@ -72,7 +72,7 @@ export class NotificationModel {
   static async markAllAsRead(userId: string, role: 'student' | 'admin'): Promise<void> {
     try {
       await db.query(
-        'UPDATE Notifications SET read = 1 WHERE user_id = ? AND role = ?',
+        'UPDATE Notifications SET is_read = 1 WHERE user_id = ? AND user_role = ?',
         [userId, role]
       );
     } catch (error) {
@@ -84,7 +84,7 @@ export class NotificationModel {
   static async getUnreadCount(userId: string, role: 'student' | 'admin'): Promise<number> {
     try {
       const [rows] = await db.query(
-        'SELECT COUNT(*) as count FROM Notifications WHERE user_id = ? AND role = ? AND read = 0',
+        'SELECT COUNT(*) as count FROM Notifications WHERE user_id = ? AND user_role = ? AND is_read = 0',
         [userId, role]
       ) as any;
       const result = Array.isArray(rows) && rows.length > 0 ? (rows[0] as any).count : 0;

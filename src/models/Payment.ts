@@ -113,7 +113,7 @@ export class PaymentModel {
     }
   }
 
-  static async updateSubmissionStatus(submissionId: number, status: 'approved' | 'rejected', permitNumber?: string, adminId?: string): Promise<void> {
+  static async updateSubmissionStatus(submissionId: number, status: 'approved' | 'rejected', adminId?: string, permitNumber?: string, reason?: string): Promise<boolean> {
     try {
       let query = 'UPDATE PaymentSubmissions SET status = ?';
       const params: any[] = [status];
@@ -128,10 +128,16 @@ export class PaymentModel {
         params.push(adminId);
       }
 
+      if (reason) {
+        query += ', rejection_reason = ?';
+        params.push(reason);
+      }
+
       query += ' WHERE submission_id = ?';
       params.push(submissionId);
 
-      await db.query(query, params);
+      const [result] = await db.query(query, params);
+      return (result as any).affectedRows > 0;
     } catch (error) {
       console.error('Database error in updateSubmissionStatus:', error);
       throw error;
@@ -143,7 +149,7 @@ export class PaymentModel {
       const [rows] = await db.query(
         `SELECT ps.*, students.fullname as student_name 
          FROM PaymentSubmissions ps 
-         LEFT JOIN Students students ON ps.student_id = students.id 
+         LEFT JOIN Students students ON ps.student_id = students.student_id 
          ORDER BY ps.upload_date DESC 
          LIMIT ? OFFSET ?`,
         [limit, offset]
@@ -228,7 +234,7 @@ export class PaymentModel {
       const [rows] = await db.query(
         `SELECT ps.*, students.fullname as student_name 
          FROM PaymentSubmissions ps 
-         LEFT JOIN Students students ON ps.student_id = students.id 
+         LEFT JOIN Students students ON ps.student_id = students.student_id 
          WHERE ps.submission_id = ?`,
         [submissionId]
       ) as any;

@@ -195,4 +195,15 @@ export class UserModel {
       throw error;
     }
   }
+
+  static async getAllAdminIds(): Promise<string[]> {
+    try {
+      const [rows] = await db.query('SELECT admin_id FROM Admins') as any;
+      const admins = Array.isArray(rows) ? rows : [];
+      return admins.map((admin: any) => admin.admin_id).filter(Boolean);
+    } catch (error) {
+      console.error('Database error in getAllAdminIds:', error);
+      throw error;
+    }
+  }
 }
